@@ -15,7 +15,7 @@ object Application1 extends App
   private val application1_path = hdfsPath + "/reuters"
 
   private val categories_documents_path = application1_path + "/rcv1-v2.topics.qrels"
-  private val documents_terms_path = application1_path + "/lyrl2004_vectors_test_pt3.dat"
+  private val documents_terms_path = application1_path + "/*.dat"
   private val terms_stem_path = application1_path + "/stem.termid.idf.map.txt"
 
   // Path to output file
@@ -45,12 +45,6 @@ object Application1 extends App
       (split_words(0), split_words(1))
     })
 
-  // Just hold all the categories, will be used later.
-  private val categories = categories_documents
-    // could be done with distinct as well...
-    .groupBy(c_docs => c_docs._1)
-    .map(c => c._1)
-
 
   // Need to count in how many documents each category has.
   private val doc_plurality_by_categories = categories_documents
@@ -58,6 +52,7 @@ object Application1 extends App
     .map(cat_doc => (cat_doc._1, 1))
     // reduce (sum)
     .reduceByKey(_+_)
+
 
 
 
@@ -76,21 +71,12 @@ object Application1 extends App
 
     })
 
-  // Just hold all the terms, will be used later.
-  private val terms = terms_documents
-    .groupBy(_._1)
-    .map(_._1)
-
-
   // how many documents each term has
   private val doc_plurality_by_terms = terms_documents
     // attach 1 for each occurrence
     .map(term => (term._1, 1))
     // attach each count (reducing like sum)
     .reduceByKey(_+_)
-
-
-
 
 
 
@@ -106,6 +92,7 @@ object Application1 extends App
     // remap to (document, [(category, document)*]) to (document, [category*]), essentially remove the reduntant reference to the document
     .map(l => (l._1, l._2.map(t => t._1)))
 
+
   // This is an RDD which should hold ((category, term), (#documents))
   private val intersection_docs_with_cat_term  = terms_documents
     // group each document by its terms
@@ -114,64 +101,78 @@ object Application1 extends App
     .map(l => (l._1, l._2.map(t => t._1)))
     // join (with document as key)
     .join(documents_grouped_by_cat)
+    .flatMap(e => e._2._1.flatMap(t => e._2._2.map(c => ((t, c), 1))))
+    .reduceByKey(_ + _)
 
-  intersection_docs_with_cat_term.foreach(println)
 
-  //intersection_docs_with_cat_term.foreach(println)
+
 
 
 
   // we need all <T, C> term category pairs
-  private val collected_cats = categories.collect()
+  private val collected_cats = doc_plurality_by_categories.collect()
 
-  private val term_category = terms
-    .flatMap(term => {
-      collected_cats.map(c => (term, c))
+  private val term_category = doc_plurality_by_terms
+    .flatMap(term => collected_cats.map(c => (term._1, c._1)))
+
+
+  // 37428 terms
+  // 103 categories
+  // should be 3855084 pairs
+  // indeed 3855084
+  // intersected documents 173943
+
+  private val terms_stems = spark.sparkContext.textFile(terms_stem_path)
+    .map(line => {
+      val split = line.split("\\s+")
+
+      (split(1), split(0))
     })
 
+  val int_collected = intersection_docs_with_cat_term.collect().toMap
+  val doc_C_collected = doc_plurality_by_categories.collect().toMap
+  val doc_T_collected = doc_plurality_by_terms.collect().toMap
 
 
+  private val res_triads = term_category
+    .join(terms_stems)
+    .map(t_c_s => {
 
+      val jaccard_index = {
+        // need to find the specific plurality intersection for given C and T
+//        val intersection_count = intersection_docs_with_cat_term
+//          .filter(t_c => (t_c._1._1, t_c._1._2) == (t_c_s._1, t_c_s._2._1))
+//          .map({
+//            case ((t, c), count) => count
+//            case _ => 0
+//          })
+//          .fold(0)(_+_)
+        val intersection_count = int_collected.get((t_c_s._1, t_c_s._2._1)).orElse(Option(0))
+        val doc_C = doc_C_collected.get(t_c_s._2._1).orElse(Option(0))
+        val doc_T = doc_T_collected.get(t_c_s._2._2).orElse(Option(0))
+//
+//        val doc_C = doc_plurality_by_categories
+//          .filter(x => x._1 == t_c_s._2._1)
+//          .map(x => x._2)
+//          .fold(0)(_+_)
 
-//
-//  private val terms_stems = spark.sparkContext.textFile(terms_stem_path)
-//    .map(line => {
-//      val split = line.split("\\s+")
-//
-//      (split(1), split(0))
-//    })
+//        val doc_T = doc_plurality_by_terms
+//          .filter(x => x._1 == t_c_s._1)
+//          .map(x => x._2)
+//          .fold(0)(_+_)
 
+//        println(s"doc_C: ${doc_C} doc_T: ${doc_T} intr: ${intersection_count}")
+        val denominator = doc_C.get + doc_T.get - intersection_count.get
 
-//  private val terms_stems_collected = terms_stems
-//  private val doc_plurality_by_categories_collected = doc_plurality_by_categories
-//  private val doc_plurality_by_terms_collected = doc_plurality_by_terms
-//  private val intersection_docs_with_cat_term_collected = intersection_docs_with_cat_term
-//
-//  private val res_triads = term_category
-//    .join(terms_stems)
-//    .map(t_c_s => {
-//
-//      val jaccard_index = {
-//        // need to find the specific plurality intersection for given C and T
-//        val intersection = intersection_docs_with_cat_term
-//          .filter(d_lc_lt => d_lc_lt._2._1.exists(c => c == t_c_s._2._1) && d_lc_lt._2._2.exists(t => t == t_c_s._2._2))
-//          .count()
-//
-//        val doc_C = doc_plurality_by_categories.filter(x => x._1 == t_c_s._2._1).map(t => t._2).reduce(_+_)
-//        val doc_T = doc_plurality_by_terms.filter(x => x._1 == t_c_s._1).map(t => t._2).reduce(_+_)
-//
-//        println(s"doc_C: ${doc_C} doc_T: ${doc_T} intr: ${intersection}")
-//        val denominator = Math.abs(doc_C + doc_T - intersection)
-//
-//        intersection.toDouble / denominator.toDouble
-//      }
-//
-//      (t_c_s._2._1, t_c_s._2._1, jaccard_index)
-//    })
-//    .map(e => s"<${e._1}>;<${e._2}>;<${e._3}>")
-//
-//  res_triads.collect().foreach(println)
-  //res_triads.saveAsTextFile(outputPath)
+        intersection_count.get / denominator.toDouble
+      }
+
+      (t_c_s._2._1, t_c_s._2._2, jaccard_index)
+    })
+    .map(e => s"<${e._1}>;<${e._2}>;<${e._3}>")
+
+  //res_triads.collect().foreach(println)
+  res_triads.saveAsTextFile(outputPath)
 
   spark.stop()
 
