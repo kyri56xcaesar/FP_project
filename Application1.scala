@@ -4,13 +4,13 @@ import org.apache.spark.rdd.RDD
 
 object Application1 extends App
 {
-  private val spark = SparkSession.builder.master("local[*]")
+
+// local configuration
+    private val spark = SparkSession.builder.master("local[*]")
     .appName("Application Scenario 1: Reuters News Stories Analysis using Spark RDDs")
     .getOrCreate()
-
-  // HDFS paths of files needed
   private val hdfsPath = "hdfs://localhost:9000"
-  FileSystem.setDefaultUri(spark.sparkContext.hadoopConfiguration, hdfsPath)
+  //  FileSystem.setDefaultUri(spark.sparkContext.hadoopConfiguration, hdfsPath)
 
   private val application1_path = hdfsPath + "/reuters"
 
@@ -21,6 +21,37 @@ object Application1 extends App
   // Path to output file
   private val outputPath = hdfsPath + "/results/application1/"
 
+
+//  // configuration for the SoftNet cluster
+//  private val hdfsPath = "hdfs://clu01.softnet.tuc.gr:8020"
+//  private val spark = SparkSession.builder
+//    .appName("Application 1, fp10")
+//    .master("yarn")
+//    .config("spark.hadoop.fs.defaultFS", "hdfs://clu01.softnet.tuc.gr:8020")
+//    .config("spark.hadoop.yarn.resourcemanager.address", "http://clu01.softnet.tuc.gr:8189")
+//    .config("spark.hadoop.yarn.application.classpath",
+//      "$HADOOP_CONF_DIR, $HADOOP_COMMON_HOME/*," +
+//      "$HADOOP_COMMON_HOME/lib/*,$HADOOP_HDFS_HOME/*," +
+//      "$HADOOP_HDFS_HOME/lib/*,$HADOOP_MAPRED_HOME/*," +
+//      "$HADOOP_MAPRED_HOME/lib/*,$HADOOP_YARN_HOME/*," +
+//      "$HADOOP_YARN_HOME/lib/*")
+//    .getOrCreate()
+//
+//  FileSystem.setDefaultUri(spark.sparkContext.hadoopConfiguration, hdfsPath)
+//
+//
+//  // HDFS paths of files needed
+////
+//
+//  private val application1_path = hdfsPath + "/user/chrisa/Reuters"
+//
+//  private val categories_documents_path = application1_path + "/rcv1-v2.topics.qrels"
+//  private val documents_terms_path = application1_path + "/*.dat"
+//  private val terms_stem_path = application1_path + "/stem.termid.idf.map.txt"
+//
+//  // Path to output file
+//  private val outputPath = hdfsPath + "/user/fp10/results/application1/"
+//
 
 
 
@@ -88,7 +119,7 @@ object Application1 extends App
   // need to join using document as a key, either reverse the tuples to set the doc as a key
   private val documents_grouped_by_cat = categories_documents
     // group each document by its categories
-    .groupBy(cat_doc => cat_doc._2)
+    .groupBy(_._2)
     // remap to (document, [(category, document)*]) to (document, [category*]), essentially remove the reduntant reference to the document
     .map(l => (l._1, l._2.map(t => t._1)))
 
@@ -106,7 +137,12 @@ object Application1 extends App
 
 
 
+  private val terms_stems = spark.sparkContext.textFile(terms_stem_path)
+    .map(line => {
+      val split = line.split("\\s+")
 
+      (split(1), split(0))
+    })
 
 
   // we need all <T, C> term category pairs
@@ -116,64 +152,53 @@ object Application1 extends App
     .flatMap(term => collected_cats.map(c => (term._1, c._1)))
 
 
+
   // 37428 terms
   // 103 categories
-  // should be 3855084 pairs
+  // should be 3855084 pairs (only for pt3 file)
   // indeed 3855084
-  // intersected documents 173943
+  // intersected documents 173943 (only for pt3 file)
 
-  private val terms_stems = spark.sparkContext.textFile(terms_stem_path)
-    .map(line => {
-      val split = line.split("\\s+")
 
-      (split(1), split(0))
-    })
 
-  val int_collected = intersection_docs_with_cat_term.collect().toMap
-  val doc_C_collected = doc_plurality_by_categories.collect().toMap
-  val doc_T_collected = doc_plurality_by_terms.collect().toMap
 
 
   private val res_triads = term_category
+    // join stems upon terms
     .join(terms_stems)
-    .map(t_c_s => {
+    // join the count of docs for each term
+    .join(doc_plurality_by_terms)
+    // must remap the key to category so I can join the doc pluralities of it
+    .map({
+      case (term, ((category, stem), dT_count)) =>
+        (category, (stem, (term, dT_count)))
+    })
+    // now that category is key we can join its pluralities and remap
+    .join(doc_plurality_by_categories)
+    // now we must remap to find the count of intersected categories/terms, key should be (category, term)
+    .map({
+      case (category, ((stem, (term, dT_count)), dC_count)) =>
+        ((term, category), (stem, dT_count, dC_count))
 
-      val jaccard_index = {
-        // need to find the specific plurality intersection for given C and T
-//        val intersection_count = intersection_docs_with_cat_term
-//          .filter(t_c => (t_c._1._1, t_c._1._2) == (t_c_s._1, t_c_s._2._1))
-//          .map({
-//            case ((t, c), count) => count
-//            case _ => 0
-//          })
-//          .fold(0)(_+_)
-        val intersection_count = int_collected.get((t_c_s._1, t_c_s._2._1)).orElse(Option(0))
-        val doc_C = doc_C_collected.get(t_c_s._2._1).orElse(Option(0))
-        val doc_T = doc_T_collected.get(t_c_s._2._2).orElse(Option(0))
-//
-//        val doc_C = doc_plurality_by_categories
-//          .filter(x => x._1 == t_c_s._2._1)
-//          .map(x => x._2)
-//          .fold(0)(_+_)
+    })
+    // can join with intersected.
+    .join(intersection_docs_with_cat_term)
+    .map({
+      case ((_, category),((stem, dT_count, dC_count), dC_dT_count)) =>
 
-//        val doc_T = doc_plurality_by_terms
-//          .filter(x => x._1 == t_c_s._1)
-//          .map(x => x._2)
-//          .fold(0)(_+_)
+        val denominator = dT_count + dC_count - dC_dT_count
+        val jaccard_index = if (denominator == 0) 0.0 else dC_dT_count.toDouble / denominator.toDouble
 
-//        println(s"doc_C: ${doc_C} doc_T: ${doc_T} intr: ${intersection_count}")
-        val denominator = doc_C.get + doc_T.get - intersection_count.get
-
-        intersection_count.get / denominator.toDouble
-      }
-
-      (t_c_s._2._1, t_c_s._2._2, jaccard_index)
+        (category, stem, jaccard_index)
     })
     .map(e => s"<${e._1}>;<${e._2}>;<${e._3}>")
 
-  //res_triads.collect().foreach(println)
-  res_triads.saveAsTextFile(outputPath)
+//  res_triads.take(10).foreach(println)
+
+  //res_triads.saveAsTextFile(outputPath)
 
   spark.stop()
 
 }
+
+
