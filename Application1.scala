@@ -50,7 +50,7 @@ object Application1 extends App
 //  private val terms_stem_path = application1_path + "/stem.termid.idf.map.txt"
 //
 //  // Path to output file
-//  private val outputPath = hdfsPath + "/user/fp10/results/application1/"
+// private val outputPath = hdfsURI + "/user/fp10/application1_results"
 //
 
 
