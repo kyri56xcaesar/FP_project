@@ -22,35 +22,31 @@ object Application1 extends App
   private val outputPath = hdfsPath + "/results/application1/"
 
 
-//  // configuration for the SoftNet cluster
-//  private val hdfsPath = "hdfs://clu01.softnet.tuc.gr:8020"
-//  private val spark = SparkSession.builder
-//    .appName("Application 1, fp10")
+  // configuration for the SoftNet cluster
+//  val spark = SparkSession.builder
+//    .appName("AnimeAnalysis")
 //    .master("yarn")
 //    .config("spark.hadoop.fs.defaultFS", "hdfs://clu01.softnet.tuc.gr:8020")
+//    //.config("spark.yarn.jars", "hdfs://clu01.softnet.tuc.gr:8020/user/xenia/jars/*.jar")
 //    .config("spark.hadoop.yarn.resourcemanager.address", "http://clu01.softnet.tuc.gr:8189")
-//    .config("spark.hadoop.yarn.application.classpath",
-//      "$HADOOP_CONF_DIR, $HADOOP_COMMON_HOME/*," +
-//      "$HADOOP_COMMON_HOME/lib/*,$HADOOP_HDFS_HOME/*," +
-//      "$HADOOP_HDFS_HOME/lib/*,$HADOOP_MAPRED_HOME/*," +
-//      "$HADOOP_MAPRED_HOME/lib/*,$HADOOP_YARN_HOME/*," +
-//      "$HADOOP_YARN_HOME/lib/*")
+//    .config("spark.hadoop.yarn.application.classpath", "$HADOOP_CONF_DIR,$HADOOP_COMMON_HOME/*,$HADOOP_COMMON_HOME/lib/*,$HADOOP_HDFS_HOME/*,$HADOOP_HDFS_HOME/lib/*,$HADOOP_MAPRED_HOME/*,$HADOOP_MAPRED_HOME/lib/*,$HADOOP_YARN_HOME/*,$HADOOP_YARN_HOME/lib/*")
+//    //.enableHiveSupport()
 //    .getOrCreate()
-//
-//  FileSystem.setDefaultUri(spark.sparkContext.hadoopConfiguration, hdfsPath)
-//
-//
-//  // HDFS paths of files needed
-////
-//
-//  private val application1_path = hdfsPath + "/user/chrisa/Reuters"
+
+  // HDFS paths of files needed
+
+
+//  val hdfsURI = "hdfs://localhost:9000"
+//  FileSystem.setDefaultUri(spark.sparkContext.hadoopConfiguration, hdfsURI)
+//  val hdfs = FileSystem.get(spark.sparkContext.hadoopConfiguration)
+//  private val application1_path = "/user/chrisa/Reuters"
 //
 //  private val categories_documents_path = application1_path + "/rcv1-v2.topics.qrels"
 //  private val documents_terms_path = application1_path + "/*.dat"
 //  private val terms_stem_path = application1_path + "/stem.termid.idf.map.txt"
 //
 //  // Path to output file
-// private val outputPath = hdfsURI + "/user/fp10/application1_results"
+// private val outputPath = "/user/fp10/application1_results/"
 //
 
 
@@ -145,21 +141,31 @@ object Application1 extends App
     })
 
 
-  // we need all <T, C> term category pairs
-  private val collected_cats = doc_plurality_by_categories.collect()
 
-  private val term_category = doc_plurality_by_terms
-    .flatMap(term => collected_cats.map(c => (term._1, c._1)))
+  // Need to reconfigure without collect
+
+  // lets see what do we have
+  val category_list = doc_plurality_by_categories
+    .map(c => (1, c._1 ))
+    .groupBy(_._1)
+    .map(c => (1, c._2.map(x => x._2)))
+
+  val term_category = doc_plurality_by_terms
+    .map(t => (1, t._1))
+    .join(category_list)
+    .flatMap(e => e._2._2.map(x => (e._2._1, x)))
 
 
 
-  // 37428 terms
+
+  // 47219 terms (total)
+  // 37428 terms (only for pt3 file)
   // 103 categories
-  // should be 3855084 pairs (only for pt3 file)
+  // should be 3,855,084 pairs (only for pt3 file)
+  // should be 4,863,557 pairs (total)
+  //           4,863,557
   // indeed 3855084
   // intersected documents 173943 (only for pt3 file)
-
-
 
 
 
@@ -195,10 +201,13 @@ object Application1 extends App
 
 //  res_triads.take(10).foreach(println)
 
-  //res_triads.saveAsTextFile(outputPath)
+  res_triads.saveAsTextFile(outputPath)
 
   spark.stop()
 
 }
 
 
+
+//spark-submit --class <class name> --master local[8]
+//<jar path>.jar
