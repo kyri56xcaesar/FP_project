@@ -1,6 +1,5 @@
 import org.apache.spark.sql.SparkSession
-import org.apache.hadoop.fs.FileSystem
-import org.apache.spark.rdd.RDD
+
 
 object Application1 extends App
 {
@@ -24,7 +23,7 @@ object Application1 extends App
 
   // configuration for the SoftNet cluster
 //  val spark = SparkSession.builder
-//    .appName("AnimeAnalysis")
+//    .appName("Project App1")
 //    .master("yarn")
 //    .config("spark.hadoop.fs.defaultFS", "hdfs://clu01.softnet.tuc.gr:8020")
 //    //.config("spark.yarn.jars", "hdfs://clu01.softnet.tuc.gr:8020/user/xenia/jars/*.jar")
@@ -142,15 +141,21 @@ object Application1 extends App
 
 
 
-  // Need to reconfigure without collect
+//  // Need to reconfigure without collect
+//
+//  private val collected_cats = doc_plurality_by_categories.collect()
+//
+//
+//  private val term_category = doc_plurality_by_terms
+//    .flatMap(term => collected_cats.map(c => (term._1, c._1)))
+//
 
-  // lets see what do we have
-  val category_list = doc_plurality_by_categories
+  private val category_list = doc_plurality_by_categories
     .map(c => (1, c._1 ))
     .groupBy(_._1)
     .map(c => (1, c._2.map(x => x._2)))
 
-  val term_category = doc_plurality_by_terms
+  private val term_category = doc_plurality_by_terms
     .map(t => (1, t._1))
     .join(category_list)
     .flatMap(e => e._2._2.map(x => (e._2._1, x)))
