@@ -2,6 +2,8 @@ import org.apache.spark.sql.SparkSession
 import org.apache.hadoop.fs.FileSystem
 import org.apache.spark.sql.functions._
 
+import scala.math.Ordering.Float
+
 
 object Application2 extends App
 {
@@ -74,16 +76,39 @@ object Application2 extends App
 
 
 
-  // Q3: What is the average SOG of vessels that appear in both station 8006 and station 10003 in the same day
-  private val avg_SOG_vessels_inStation8006and10003atSameDay = logs
+  // Q3: What is the average SOG of
+  //                  vessels that appear in both station 8006 and station 10003
+  //                                                             in the same day
+  private val station1 = "8006"
+  private val station2 = "10003"
+
+  private val unique_stations_per_day_per_vessel_length = logs
     .filter(col("timestamp").isNotNull && col("station").isNotNull)
     .filter(col("speedoverground").isNotNull)
-    //.groupBy(col("mmsi"), to_date(col("timestamp")))
-    .agg(collect_set(col("station")).as("stations"))
-    .filter(array_contains(col("stations"), "10003") && array_contains(col("stations"), "8006"))
+
+    .filter(col("station") === station1 || col("station") === station2)
+    .groupBy(col("mmsi"), to_date(col("timestamp")).as("date"))
+
+    .agg(
+      size(collect_set(col("station")).as("set_of_stations_per_day_per_vessel")).as("unique_stations_per_day_per_vessel_length")
+    )
+    .orderBy(desc("unique_stations_per_day_per_vessel_length"))
+
+    .filter(col("unique_stations_per_day_per_vessel_length") === 2)
+
+//  unique_stations_per_day_per_vessel_length.show()
 
 
+  private val avg_SOG_vessels_inStation8006and10003atSameDay = logs
+    .join(unique_stations_per_day_per_vessel_length,  "mmsi")
+    .groupBy("mmsi")
+    .agg(
+      avg(col("speedoverground").cast("float")).as(s"avg_SOG_per_vessel_in${station1}and${station2}InSameDay")
+    )
   avg_SOG_vessels_inStation8006and10003atSameDay.show()
+
+
+
 
 
 
