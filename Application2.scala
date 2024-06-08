@@ -1,4 +1,4 @@
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.apache.hadoop.fs.FileSystem
 import org.apache.spark.sql.functions._
 
@@ -18,14 +18,18 @@ object Application2 extends App
   private val application2_path = hdfspath + "/nmea_aegean"
   private val nmea_aegean_logs_path = application2_path + "/nmea_aegean.logs"
 
-  private val outputPath = hdfspath + "/results/application2"
+  private val Q1_outputPath = hdfspath + "/results/application2/Q1.csv"
+  private val Q2_outputPath = hdfspath + "/results/application2/Q2.csv"
+  private val Q3_outputPath = hdfspath + "/results/application2/Q3.csv"
+  private val Q4_outputPath = hdfspath + "/results/application2/Q4.csv"
+  private val Q5_outputPath = hdfspath + "/results/application2/Q5.csv"
 
 
 
 
   private val logs = spark.read.option("header", "true").csv(nmea_aegean_logs_path)
-  logs.printSchema()
-  logs.show(10)
+  //logs.printSchema()
+  //logs.show(10)
 
   // Q1: What is the number of tracked vessel positions per station per day?
   // I guess we should check for empty rows
@@ -42,14 +46,21 @@ object Application2 extends App
     .withColumnRenamed("count", "no_vessels_per_day_station")
     .withColumnRenamed("to_date(timestamp)", "date")
 
-  no_vessels_per_day_per_station.show(10)
+  no_vessels_per_day_per_station
+    .write
+    .mode(SaveMode.Overwrite)
+    .format("csv")
+    .save(Q1_outputPath)
+
+
+  //no_vessels_per_day_per_station.show(10)
 
   // no junk values
   //println(logs.count())
   //println(logs.filter((col("station").isNotNull && col("station").isNotNull)).count())
 
-  /*
-  */
+
+
 
   // Q2: What is the vessel id with the highest number of tracked positions?
   // should count vessels with highest amount of unique longitude, latitude pairs
@@ -66,7 +77,13 @@ object Application2 extends App
     .orderBy(desc("no_tracked_positions"))
     .limit(1)
 
-  highest_tracked_vessel.show()
+  highest_tracked_vessel
+    .write
+    .mode(SaveMode.Overwrite)
+    .format("csv")
+    .save(Q2_outputPath)
+
+  //highest_tracked_vessel.show()
 
   // no junk values
   // println(logs.count())
@@ -82,7 +99,7 @@ object Application2 extends App
   private val station1 = "8006"
   private val station2 = "10003"
 
-  private val unique_stations_per_day_per_vessel_length = logs
+  private val unique_stations_per_day_per_vessel_amount = logs
     .filter(col("timestamp").isNotNull && col("station").isNotNull)
     .filter(col("speedoverground").isNotNull)
 
@@ -90,31 +107,46 @@ object Application2 extends App
     .groupBy(col("mmsi"), to_date(col("timestamp")).as("date"))
 
     .agg(
-      size(collect_set(col("station")).as("set_of_stations_per_day_per_vessel")).as("unique_stations_per_day_per_vessel_length")
+      size(collect_set(col("station"))).as("unique_stations_per_day_per_vessel_amount")
     )
-    .orderBy(desc("unique_stations_per_day_per_vessel_length"))
+    .orderBy(desc("unique_stations_per_day_per_vessel_amount"))
 
-    .filter(col("unique_stations_per_day_per_vessel_length") === 2)
+    .filter(col("unique_stations_per_day_per_vessel_amount") === 2)
 
 //  unique_stations_per_day_per_vessel_length.show()
 
 
   private val avg_SOG_vessels_inStation8006and10003atSameDay = logs
-    .join(unique_stations_per_day_per_vessel_length,  "mmsi")
+    // right join
+    .join(unique_stations_per_day_per_vessel_amount,  "mmsi")
     .groupBy("mmsi")
     .agg(
       avg(col("speedoverground").cast("float")).as(s"avg_SOG_per_vessel_in${station1}and${station2}InSameDay")
     )
-  avg_SOG_vessels_inStation8006and10003atSameDay.show()
+  //avg_SOG_vessels_inStation8006and10003atSameDay.show()
 
-
+  avg_SOG_vessels_inStation8006and10003atSameDay
+    .write
+    .mode(SaveMode.Overwrite)
+    .format("csv")
+    .save(Q3_outputPath)
 
 
 
 
   // Q4: What is the average Abs (Heading - COG) per station?
+  private val avg_heading_minus_cog_per_station = logs
+    .groupBy("station")
+    .agg(
+      avg(abs(col("heading").cast("float") - col("courseoverground").cast("float"))).as("avg_deviationOfVessels_per_station")
+    )
 
-
+  //avg_heading_minus_cog_per_station.show()
+  avg_heading_minus_cog_per_station
+    .write
+    .mode(SaveMode.Overwrite)
+    .format("csv")
+    .save(Q4_outputPath)
 
 
   // Q5: What are the Top-3 most frequent vessel statuses?
@@ -126,7 +158,13 @@ object Application2 extends App
     .orderBy(desc("vessel_amount"))
     .limit(3)
 
-  top3_most_frequent_statuses.show()
+  top3_most_frequent_statuses
+    .write
+    .mode(SaveMode.Overwrite)
+    .format("csv")
+    .save(Q5_outputPath)
+
+  //top3_most_frequent_statuses.show()
 
   // no junk values
   // println(logs.count())
