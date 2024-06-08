@@ -22,44 +22,49 @@ object Application2 extends App
 
 
   private val logs = spark.read.option("header", "true").csv(nmea_aegean_logs_path)
-//  logs.printSchema()
-//  logs.show(10)
+  logs.printSchema()
+  logs.show(10)
 
   // Q1: What is the number of tracked vessel positions per station per day?
   // I guess we should check for empty rows
 
-//  private val no_vessels_per_day_per_station = logs
-//    .filter(col("mmsi").isNotNull)
-//    .filter((col("station").isNotNull && col("station").isNotNull))
-//    .groupBy(col("station"), to_date(col("timestamp")))
-//    .count()
-//    .withColumnRenamed("count", "no_vessels_per_day_station")
-//    .withColumnRenamed("to_date(timestamp)", "date")
-//
-//  no_vessels_per_day_per_station.show(10)
+  private val no_vessels_per_day_per_station = logs
+    .filter(col("mmsi").isNotNull)
+    .filter((col("station").isNotNull && col("timestamp").isNotNull))
+    .withColumn("tracked_position", concat_ws(",", col("longitude"), col("latitude")))
+    .drop("longitude", "latitude")
+    .groupBy(col("station"), to_date(col("timestamp")))
+    .agg(
+      countDistinct("tracked_position").as("unique_tracked_pos")
+    )
+    .withColumnRenamed("count", "no_vessels_per_day_station")
+    .withColumnRenamed("to_date(timestamp)", "date")
+
+  no_vessels_per_day_per_station.show(10)
 
   // no junk values
   //println(logs.count())
   //println(logs.filter((col("station").isNotNull && col("station").isNotNull)).count())
 
-
-
+  /*
+  */
 
   // Q2: What is the vessel id with the highest number of tracked positions?
   // should count vessels with highest amount of unique longitude, latitude pairs
-//  private val highest_tracked_vessel = logs
-//    .filter(col("mmsi").isNotNull)
-//    .filter(col("longitude").isNotNull && col("latitude").isNotNull)
-//    .withColumn("tracked_position", concat_ws(",", col("longitude"), col("latitude")))
-//    .drop("longitude", "latitude")
-//    .groupBy("mmsi")
-//    .agg(
-//      countDistinct("tracked_position").as("no_tracked_positions")
-//    )
-//    .orderBy(("no_tracked_positions"))
-//    .limit(1)
-//
-//  highest_tracked_vessel.show()
+  // "tracked positions" should indicate unique pairs? (long, lat)
+  private val highest_tracked_vessel = logs
+    .filter(col("mmsi").isNotNull)
+    .filter(col("longitude").isNotNull && col("latitude").isNotNull)
+    .withColumn("tracked_position", concat_ws(",", col("longitude"), col("latitude")))
+    .drop("longitude", "latitude")
+    .groupBy("mmsi")
+    .agg(
+      countDistinct("tracked_position").as("no_tracked_positions")
+    )
+    .orderBy(desc("no_tracked_positions"))
+    .limit(1)
+
+  highest_tracked_vessel.show()
 
   // no junk values
   // println(logs.count())
@@ -87,16 +92,16 @@ object Application2 extends App
 
 
 
-//  // Q5: What are the Top-3 most frequent vessel statuses?
-//  private val top3_most_frequent_statuses = logs
-//    .filter(col("mmsi").isNotNull && col("status").isNotNull)
-//    .groupBy("status")
-//    .count()
-//    .withColumnRenamed("count", "vessel_amount")
-//    .orderBy(desc("vessel_amount"))
-//    .limit(3)
-//
-//  top3_most_frequent_statuses.show()
+  // Q5: What are the Top-3 most frequent vessel statuses?
+  private val top3_most_frequent_statuses = logs
+    .filter(col("mmsi").isNotNull && col("status").isNotNull)
+    .groupBy("status")
+    .count()
+    .withColumnRenamed("count", "vessel_amount")
+    .orderBy(desc("vessel_amount"))
+    .limit(3)
+
+  top3_most_frequent_statuses.show()
 
   // no junk values
   // println(logs.count())
